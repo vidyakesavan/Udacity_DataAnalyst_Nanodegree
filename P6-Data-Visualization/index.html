@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="http://d3js.org/d3.v4.min.js"></script>
+  <script src="http://colorbrewer2.org/export/colorbrewer.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-legend/2.24.0/d3-legend.js"></script>
+
+    <style>
+      body {
+            width: 99vw;
+            height: 70vh;
+            font-family: sans-serif;
+      }
+      #chartContainer{
+            width: 100%;
+            height: 100%;
+            margin-left: 0 auto;
+      }
+      svg{
+            width: 100%;
+            height: 100%;
+            margin: 0 auto;
+      }
+      .background {
+            fill: #ABE3FE !important;
+      }
+      .legendColors {
+            left: 15%;
+            top: 10% ;
+            font: 12px sans-serif; 	
+      }
+      div.tooltip {   
+            position: absolute;           
+            text-align: center;           
+            width: 120px;                  
+            height: 45px;                 
+            padding: 2px;             
+            font: 12px sans-serif;        
+            background: #d6dfe9;   
+            border: 0px;      
+            border-radius: 8px;           
+            pointer-events: none;         
+      }
+      .slider{
+            
+            -webkit-appearance: none;
+            appearance: none;
+            height: 20px; 
+            background: #d3d3d3; 
+            outline: none;
+            position:fixed;
+            top: 5%;
+            right: 20%;
+            width: 200px;
+
+      }
+      .slider::-webkit-slider-thumb {
+            -webkit-appearance: none; 
+            appearance: none;
+            width: 20px; 
+            height: 20px; 
+            background: #008CBA; 
+            cursor: pointer; 
+      }
+      #start {
+            background-color: #008CBA;
+            border: none;
+            color: white;
+            padding: 5px 5px;
+            text-align: center;
+            display: inline-block;
+            font-size: 11px;
+      } 
+      h1 {
+            text-align: left;
+            text-transform: uppercase;
+            font-weight: bold;
+            font-size:22px; 
+            margin: 3px 0;
+      }
+      h2 {
+            font-size: 16px;
+            text-align: center;
+      }
+      h3{
+            position: absolute;
+            top: 1%;
+            right: 22%;
+            font-size: 16px;
+      }
+      #source p {
+            position: absolute;
+            bottom: 0.8%;
+            left: 1%;
+            font: 12px sans-serif; 
+            color : #4E4F52;
+      }
+      
+      #intro{
+            text-align: justify;
+            width: 60%;
+            font-size: 13px;
+      }
+    </style>
+
+    <body>
+      <title> The rise of cellular subscriptions</title>
+      <div id = "chartContainer"></div>
+      <div id="source">
+          <p> <b>Source: </b><a href = http://data.un.org/Data.aspx?d=ITU&f=ind1Code%3AI911> UN Data </a> on Mobile-cellular telephone subscriptions per 100 inhabitants. 
+          </p>
+      </div>
+
+    <script type="text/javascript">  
+      function draw(geo_data) {
+        "use strict";
+
+          /*
+            draw function initialises variables and draws a basic map
+          */
+
+          var margin = {top: 10, left: 10, bottom: 10, right: 10},
+          				width = parseInt(d3.select('#chartContainer').style('width')),
+						width = width - margin.left - margin.right,
+						mapRatio = .5,
+						height = width * mapRatio;
+          var initYear = 2014;
+          var heading = "Number of cellular subscriptions per 100 people ";
+
+          // add headers, introduction text, button to the chart container div
+          d3.select("#chartContainer").insert("h1").text("THE RISE OF CELLULAR SUBSCRIPTIONS (1979-2014)");
+          d3.select("#chartContainer").insert("p")
+            .attr("id","intro")
+            .html("In the year 2002, Israel and Luxembourg became the world's first countries with more than 100 cellular subscriptions per 100 people. 2005 saw a leap in subscriptions with 20 more countries joining this club. In 2014, 118 countries in the world had more cellular subscriptions than their population.   <br><br>This animation charts the growth in number of celluar subscriptions across the world from 1979 to 2014. Please use the slider to move through the years at the end of animation." );
+          
+          d3.select("#chartContainer").append("button")
+                                      .attr("id", "start")
+                                      .text("Click to start animation");
+
+          // create a hidden slider
+          var slider = d3.select("#chartContainer").insert("p").append("input")
+                  .attr("type" , "range") 
+                  .attr("class", "slider")
+                  .attr("showRange" , "true")
+                  .attr("min", "1979")
+                  .attr("max", "2014")
+                  .attr("id", "year")
+                  .attr("value", initYear)
+                  .style("opacity", 0);
+
+          d3.select("#chartContainer").insert("h2").text(heading);
+
+
+          // create a hidden tooltip variable
+          var tooltip = d3.select("#chartContainer").append("div")
+                        .attr("class", "tooltip")
+                        .style("opacity", 0);
+
+          /*
+            create the map with mercator projection, add water using graticule, colour the map path black
+          
+          */               
+          var svg = d3.select("#chartContainer")
+                      .append("svg")
+                      .attr("width", width)
+                      .attr("height", height)
+                      .append('g')
+                      .attr('class', 'map');
+
+          var projection = d3.geoMercator()
+                           .scale(width/9)
+                           .translate([width / 2, height / 2]);
+
+          var path = d3.geoPath()
+                       .projection(projection);
+
+          var graticule = d3.geoGraticule();
+
+          svg.append("path")
+             .datum(graticule.outline)
+             .attr("class", "background")
+             .attr("d", path);
+        
+
+          var map = svg.selectAll('path')
+                       .data(geo_data.features)
+                       .enter()
+                       .append('path')
+                       .attr('d', path)
+                       .style('fill', 'white')
+                       .style('stroke', 'black')
+                       .style('stroke-width', 0.5);     
+           
+               
+          function drawMap(csv_data){
+
+            /*
+              drawMap function defines the scale for the map, adds legends, merges the geo JSON with the data file and calls animate function on click of the start animation button.
+            */
+
+
+         
+            // define the color scale and create legends 
+
+            var color = d3.scaleThreshold()
+                           .domain([20,40,60,80,100])
+                           .range(colorbrewer.YlOrBr[6]);
+
+            var legendColors = d3.legendColor()
+                                 .shapeWidth(30)
+                                 .title("Subscriptions per 100 people")
+                                 .labelFormat(d3.format(".0f"))
+                                 .labels(d3.legendHelpers.thresholdLabels)
+                                 .scale(color);
+            svg.append("g")
+                        .attr("class", "legendColors")
+                        .attr("transform", "translate(10,50)");
+
+
+            svg.select(".legendColors")
+                         .call(legendColors);
+
+          
+            // call mergeMapData to merge the year, cellphone subscriber information with the geo JSON data
+
+            geo_data = mergeMapData(csv_data, geo_data);
+            
+            var years = Object.keys(geo_data.features[0].properties)
+            				  .slice(0,-1);
+
+            var yearIndex = 0;
+
+            d3.select("#start").on("click" , function(){
+              animate_map();
+            });
+
+
+            function animate_map(){
+
+              /*
+                animate_map function calls the shade function to color the map by count of cellular subscribers for each year, calls create_slider function to enable the slider at the end of the animation.
+              */
+              var yearInterval = setInterval(function(){
+                shade(years[yearIndex]);
+                yearIndex++;
+
+                if (yearIndex >= years.length){
+                  clearInterval(yearInterval);
+                  create_slider();
+                }
+              }, 800);
+            }
+
+            function create_slider(){
+
+              /*
+                create_slider function creates a year slider and adds tooltips to the map
+              */
+                var year_val = years[years.length - 1];
+                
+                d3.select("#chartContainer").insert("h3")
+                 .text("Slide to select a year");
+               
+                // make slider visible
+                slider.style("opacity", 1);
+              
+                // call shade function to color the map for the selected year
+                d3.select("#year").on("input", function() {
+                  year_val = this.value;
+                  shade(this.value);
+              });
+
+                /*
+                  enable tooltip when the user hovers on the map, round the number of subscribers for the tooltip
+                */
+                map.on("mouseover", function(d){
+
+                    tooltip.transition()
+                    	   .delay(50)
+                    	   .duration(600)
+                    	   .style("opacity", 1);
+                    
+                    var cellphone_count = Math.round((d.properties[year_val] * 100)/100);
+                    
+                    if(isNaN(cellphone_count)) cellphone_count = "Data not available for ";
+                    tooltip.html(d.properties.name + ", " + year_val + "<br/>"  + cellphone_count + " subscribers")
+                    .style("left", (d3.event.pageX) + "px")     
+                    .style("top", (d3.event.pageY) + "px");
+                });
+                
+                map.on("mouseout", function(){
+                  tooltip.transition().duration(300).style("opacity", 0.8);
+                  tooltip.transition().duration(300).style("opacity", 0);
+                }); 
+              }
+
+              function shade(year){
+                /*
+                  shade function creates the colour fill on the map using the colour legend created in the drawMap function. Zero values are coloured white and countries that do not have data available are shaded grey.
+                */
+                d3.select('h2')
+                  .text(heading + "(" + year + ")") 
+                  .style("opacity", 1);
+
+                svg.selectAll('path') 
+                   .transition()
+                   .duration(400)
+                   .style('fill', function(d) {
+                    if(d.properties[year] > 0) {
+                      return color(d.properties[year]);
+                    }
+                    if(d.properties[year] == 0) {
+                      return 'white';
+                    }
+                    return '#ccc';
+                  });
+              }
+
+
+            function mergeMapData(csv_data, geo_data) {
+                /*
+                  mergeMapData read the data file and adds the Year, cellular subscription numbers to the geo JSON file for each country.
+                */
+
+                var nested = d3.nest()
+                                .key(function (d) {
+                                  return d.year
+                                })
+                                .entries(csv_data)
+
+                /*
+                  Match the country names in geo JSON to reflect the ones in the data file
+                */
+
+                geo_data.features[167].properties.name = "United States"; 
+                geo_data.features[57].properties.name = "United Kingdom";
+                geo_data.features[33].properties.name = "Congo (Democratic Republic of the)";
+                geo_data.features[34].properties.name = "Congo";
+                geo_data.features[163].properties.name = "Tanzania";
+                geo_data.features[31].properties.name = "Cote d'Ivoire";
+                geo_data.features[62].properties.name = "Guinea-Bissau";
+                geo_data.features[146].properties.name = "Serbia";
+                geo_data.features[103].properties.name = "T.F.Y.R. Macedonia";
+                geo_data.features[26].properties.name = "Central African Rep.";
+                geo_data.features[75].properties.name = "Iran (Islamic Rep. of)";
+                geo_data.features[170].properties.name = "Viet Nam";
+                geo_data.features[87].properties.name = "Korea (Rep. of)";
+                geo_data.features[129].properties.name = "Dem. People's Rep. of Korea";
+                geo_data.features[44].properties.name = "Dominican Rep.";
+
+                /*
+                  Loop through the data file, pick a country, year and cellular subscription values, find the matching country in geo JSON and update the properties.
+
+                */
+
+                for (var i = 0; i < nested.length; i++) {
+                  var year = nested[i].key;
+                  var values = nested[i].values;
+
+                  for (var j = 0; j < values.length; j++) {
+                    var csv_country = values[j].country;
+                    var csv_cellphones = values[j].cellphones;
+
+                    for (var k = 0; k < geo_data.features.length; k++) {
+                      var geo_country = geo_data.features[k].properties.name;
+
+                      if (geo_country == csv_country) {
+                        var strYear = year.toString();
+                        geo_data.features[k].properties[strYear] = csv_cellphones
+                      }
+                    }
+                  }
+                }
+                return geo_data;
+            }
+          }
+
+      var format = d3.timeFormat("%Y");
+
+      /*
+        read the data file
+      */
+
+      d3.csv("un_cellphones_per_100.csv", function(d) {
+              d["cellphones"] = +d["cellphones"];
+              return d;
+            }, drawMap);              
+        
+      };
+      </script>
+  </head>
+<body>
+  
+
+  <script type="text/javascript">
+    /*
+      Use D3 to load the GeoJSON file
+    */
+    
+d3.json("world_countries_new.json", draw);
+  </script>
+
+</body>
+</html>

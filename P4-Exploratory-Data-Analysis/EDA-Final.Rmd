@@ -1,0 +1,1596 @@
+Prosper Loan Data Analysis by Vidya Kesavan
+========================================================
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+library(ggplot2)
+library(dplyr)
+library(scales)
+library(stringr)
+library(ggplot2)
+library(GGally)
+library(gridExtra)
+library(grid)
+theme_set(theme_minimal())
+
+```
+
+##Introduction##
+
+Prosper is a peer-to-peer lending marketplace that brings borrowers and 
+investors to a common platform.Prosper uses the borrower's credit profile, past 
+loan information, income and a variety of other factors to determine a Prosper 
+score, Prosper rating and interest rate. Investors can choose which profiles to 
+lend money to and the amount of money to invest. 
+
+This dataset shared by prosper contains the borrower, investor and loan details 
+for about 113937 loans taken during the period 2005 to 2014.
+
+##Univariate Plots Section##
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, load-data}
+#load data
+prosper.loan <- read.csv("prosperLoanData.csv", check.names = FALSE, 
+                         na.strings = c("","NA"))
+
+#show dimensions
+dim(prosper.loan)
+```
+
+This dataset has 81 variables. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, formatvariables}
+
+# Order the income range factor in ascending
+
+prosper.loan$IncomeRange <- ordered(prosper.loan$IncomeRange, 
+                                    levels = c("Not employed", "$0", "$1-24,999","$25,000-49,999","$50,000-74,999","$75,000-99,999",
+                                               "$100,000+","Not displayed"))
+
+
+# Order the Prosper Rating (Alpha) field as "AA","A","B","C","D","E","HR","NA"
+prosper.loan$`ProsperRating (Alpha)` <- factor(prosper.loan$`ProsperRating (Alpha)`, 
+                                               levels = c("AA","A","B","C","D",
+                                                          "E","HR","NA"))
+
+#Order the LoanOriginationQuarter by year
+prosper.loan$LoanOriginationQuarter <- factor(prosper.loan$LoanOriginationQuarter,
+                                              levels = c("Q1 2006","Q2 2006",
+                                                         "Q3 2006","Q4 2006",
+                                                         "Q1 2007","Q2 2007",
+                                                         "Q3 2007","Q4 2007",
+                                                         "Q1 2008","Q2 2008",
+                                                         "Q3 2008","Q4 2008",
+                                                         "Q1 2009","Q2 2009",
+                                                         "Q3 2009","Q4 2009",
+                                                         "Q1 2010","Q2 2010",
+                                                         "Q3 2010","Q4 2010",
+                                                         "Q1 2011","Q2 2011",
+                                                         "Q3 2011","Q4 2011",
+                                                         "Q1 2012","Q2 2012",
+                                                         "Q3 2012","Q4 2012",
+                                                         "Q1 2013","Q2 2013",
+                                                         "Q3 2013","Q4 2013",
+                                                         "Q1 2014"))
+
+# Convert LoanOriginationDate to a Date variable
+prosper.loan$LoanOriginationDate <- as.Date(prosper.loan$LoanOriginationDate,
+                                            '%Y-%m-%d')
+
+#  Rename ProsperRating (Alpha) to ProsperRatingAlpha
+
+names(prosper.loan)[names(prosper.loan) == "ProsperRating (Alpha)"] <- "ProsperRatingAlpha"
+
+# NEW VARIABLES
+
+# Create a new variable called Listing Category which adds desciption labels 
+# to the numbers in ListingCategory (numeric) field
+
+prosper.loan$ListingCategory <- factor(prosper.loan$`ListingCategory (numeric)`, 
+                                       levels = c(0,1,2,3,4,5,6,7,8,9,
+                                                  10,11,12,13,14,15,16,
+                                                  17,18,19,20),
+                                       labels = c('Not Available',
+                                                  'Debt Consolidation',
+                                                  'Home Improvement',
+                                                  'Business',
+                                                  'Personal Loan',
+                                                  'Student Use','Auto','Other',
+                                                  'Baby&Adoption','Boat',
+                                                  'Cosmetic Procedure',
+                                                  'Engagement Ring',
+                                                  'Green Loans',
+                                                  'Household Expenses',
+                                                  'Large Purchases','Medical/Dental','Motorcycle','RV','Taxes','Vacation','Wedding Loans'))
+
+
+# Create a new variable called Delinquent which is 1 for loans that are past due, 
+# charged off or defaulted and 0 for the others.
+prosper.loan$delinquent <- ifelse(prosper.loan$LoanStatus %in% 
+                              c("Current" ,"Completed","Cancelled",
+                                "FinalPaymentInProgress"), 0 , 1)
+
+
+# Create a new variable called CreditLowerBucket which groups the 
+# CreditScoreRangeLower into 3 buckets.
+#720 and above - Low Risk
+#600-719 - Medium Risk
+#Less then 600 - High Risk
+
+prosper.loan$CreditLowerBucket <- cut(prosper.loan$CreditScoreRangeLower, 
+                                      breaks = c(0,600,719,900), 
+                                      labels = c("High Risk[Less than 600]", 
+                                                 "Medium Risk[600-719]", 
+                                                 "Low Risk[720 & above]"))
+
+# Create a new variable called InvestorCountBucket that groups the number 
+# of investors into buckets.
+# 0-100,101-200,201-300, greater than 300
+
+prosper.loan$InvestorCountBucket <- cut(prosper.loan$Investors, 
+                                        breaks = c(0,100,200,300,1189))
+```
+
+###Borrower's Profile###
+
+To understand the dataset better, I want to first take a look at the borrower's 
+data. What does a borrower's profile on Prosper look like?
+
+**Occupation** 
+
+Propser website allows borrowers to choose from 67 types of occupations. 
+It is an exhaustive list, yet a lot of users seem to choose "Other" 
+as the occupation. Professionals and computer programmers seem to the top 
+occupations among Prosper borrowers.
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot1}
+# Create a new dataframe with the list of top 10 occupations 
+# and the count of borrowers.
+
+top.occupations <- prosper.loan%>%
+  filter(Occupation!="") %>%
+  group_by(Occupation) %>%
+  summarise(count = n()) %>%
+  arrange(desc(count)) %>%
+  top_n(n=10,wt=count)
+
+# Create a plot of top 10 occupations
+
+ggplot(aes(x=reorder(Occupation,count),y=count, fill = I('#67AEC3')),
+       data=top.occupations) +
+  geom_bar(stat="identity") +
+  labs(x="Occupation type",y="Count of occupation", 
+       title = "Top 10 Borrower Occupations") +
+  coord_flip() +
+  theme(plot.margin = unit(c(0.25,0.25,0.25,0.25), "cm"))
+```
+
+
+**Income**
+
+Disclosing one's income is not mandatory on Prosper. But lenders do prefer to 
+invest in loans where borrower's have shared the income details. 
+
+As expected most borrowers are in the income range of $25,000 to $75,000.
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot2}
+qplot(x=IncomeRange, data = prosper.loan, fill = I('#67AEC3')) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  labs(x="Income Range(USD/Year)",y="Number of borrowers", 
+       title = "Borrower's Income Range" , 
+       subtitle = "Most borrowers are in the income range $25k-$75k")
+  
+```
+
+
+
+**Credit Score**
+
+Though Prosper does not share details on the algorithms used to determine 
+a borrower's rate of interest, it is common knowledge that a borrower's 
+credit score definitely plays a role in the rate of interest.
+
+We should expect this distribution to be almost normal. Bad credit scores 
+mean high risk and great credit scores mean low risk. In a lending marketplace, 
+risk has a direct relation to rate of interest. Lenders will try to maximise 
+their returns while minimizing their risks. 
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot3}
+
+grid.arrange(ggplot(aes(x=CreditScoreRangeLower, fill = I('#67AEC3'), color = I('black')),
+                  data = subset(prosper.loan,!is.na(CreditScoreRangeLower))) +
+  geom_histogram(binwidth = 20) +
+  coord_cartesian(xlim = c(350,900)) +
+  scale_x_continuous(breaks = seq(350,900,50)) +
+  labs(x="Credit Score (Lower)",y="Number of borrowers"),
+  ggplot(aes(x=1, y=CreditScoreRangeLower),
+                  data = subset(prosper.loan,!is.na(CreditScoreRangeLower))) +
+  geom_boxplot() +
+  labs(x="1",y="Credit Score"),
+  nrow = 1, top = textGrob("Borrower's Credit Score (Lower)" )
+  )
+
+```
+
+I can see that there are some very low scores, around 400 and some 0s.
+
+
+**Debt To Income Ratio**
+
+A lot of investors might use Debt To Income Ratio to estimate the borrower's 
+capacity to complete payments on the loan. 
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot4}
+# Plot a distribution of DebtToIncomeRatio
+
+ggplot(aes(x=DebtToIncomeRatio, fill = I('#67AEC3')),data=prosper.loan) +
+  geom_histogram() +
+  labs(x="Debt To Income Ratio",y="Number of borrowers",  
+       title = "Debt to Income Ratio of all borrowers" , 
+       subtitle = "Most borrowers have a debt to income ratio less than 1")
+```
+
+
+Most of the borrowers are in the debt to income ratio less than 1, 
+which is a good sign. Changing the scale to logarithmic will allow me to take a 
+closer look at the distriution.
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot5}
+# Change the scale to log10
+
+grid.arrange(
+  ggplot(aes(x=DebtToIncomeRatio, fill = I('#67AEC3'), 
+           color = I('black')),data=prosper.loan) +
+  geom_histogram(binwidth = 0.2) +
+  scale_y_log10(labels = comma) +
+  scale_x_continuous(breaks = seq(0,10.0,1.0)) +
+  labs(x="Debt To Income Ratio", y="Number of borrowers") ,
+  
+  ggplot(aes(x=1, y=DebtToIncomeRatio),
+                  data = prosper.loan) +
+  geom_boxplot() +
+  labs(x="1",y="Debt to Income Ratio"),
+  nrow = 1, top = textGrob("Debt to Income Ratio of all borrowers")
+)
+
+```
+
+
+The distribution is positively skewed with a long tail of borrowers towards the 
+right. This shows that most of the borrowers on the platform have a lower debt 
+to income ratio, with less than 1 being the most common. It is not clear at this 
+point if investors prefer borrowers with lower debt to income ratio, but it will 
+become clear in the upcoming sections.
+
+
+Restricting the y axis to 1 on the box plot, we can see that most of the borrowers 
+have a debt to income ratio between 0.1 to 0.4. There are a lot of outliers with ratios
+over 0.55.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot5.1}
+  
+ggplot(aes(x=1, y=DebtToIncomeRatio),
+                  data = prosper.loan) +
+geom_boxplot() +
+  coord_cartesian(ylim = c(0,1))+
+  labs(x="1",y="Debt to Income Ratio", 
+       title ="Debt to Income Ratio of all borrowers")
+
+```
+
+**Prosper Rating**
+
+Prosper Rating is calculated by Prosper based on the borrower's credit profile 
+and other information. This rating indicates a user's credit worthiness on 
+Prosper and is used by many investors to evaluate and filter investment options.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot6}
+#Plot a distribution of prosper ratings
+
+qplot(x=ProsperRatingAlpha, data=prosper.loan, fill = I('#67AEC3')) +
+  labs(x="Prosper Rating \n (High to Low --->)",y="Number of borrowers",  
+       title = "Prosper Rating for all borrowers")
+```
+
+Prosper introduced the rating concept in 2009. Hence loan data before 2009 
+contains NA for the prosper rating. Removing the NA from the data, 
+we can see a clearer distribution.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot7}
+#Plot a distribution of prosper ratings
+
+qplot(x=ProsperRatingAlpha, data=subset(prosper.loan, ProsperRatingAlpha!="NA"), 
+      fill = I('#67AEC3')) +
+  labs(x="Prosper Rating \n (High to Low --->)",y="Number of borrowers",  
+       title = "Prosper Rating for all borrowers")
+```
+
+The distribution of Prosper Rarings for borrowers is almost normal, with a peak 
+at C. This again sits well with the assumption that most lenders prefer moderate 
+risks which is offered by borrowers with a medium prosper score.
+
+
+**Reason for borrowing**
+
+The borrowers are asked to specify the reason for borrowing money in the 
+Listing Category field. This again provides investors a chance to 
+evaluate the borrower. 
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot8}
+
+# Plot a distribution of ListingCategory, sorted by the most popular to the least
+qplot(reorder(factor(ListingCategory),factor(ListingCategory),length), 
+      data = prosper.loan, fill = I('#67AEC3')) +
+  coord_flip() + 
+  labs(x="Reasons for borrowing", y="Number of borrowers", 
+       title = "Reasons for borrowing money on Prosper" , 
+       subtitle = "Over 50% of the borrowers use Prosper loans 
+       to consolidate their debt")
+```
+
+Over 50% of the borrowers use Prosper loans to consolidate their debt. 
+Credit card debts, for example, are more expensive and it is wise to use a loan 
+from a peer-to-peer lending company at a competitive rate to pay them off.
+
+
+
+
+**Loan Statuses**
+
+This is the status of all loans in Prosper for the period 2005 to 2014. 
+As expected most loans have completed or are in current status with 
+payments happening on time.
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=8, plot11}
+# Loan status counts
+
+qplot(x=LoanStatus, data=prosper.loan, fill = I("#A3A7A2")) +
+  theme(text = element_text(size=12))+
+  labs(x="Loan Status",y="Number of Loans",  
+       title = "Prosper Loan Status (2006-2014) in numbers")+
+  coord_flip()
+
+```
+
+
+The numbers do not paint a story, so let's look at percentages.
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=8, plot12}
+
+# Plotting loan status as percentages
+ggplot(aes(reorder(factor(LoanStatus),factor(LoanStatus),length)), 
+       data=prosper.loan) +
+  geom_bar(aes(y=(..count..)/sum(..count..) ,  
+               fill=LoanStatus %in% c("Current","Completed", 
+                                      "FinalPaymentInProgress"))) +
+  scale_y_continuous(labels = percent) +
+  scale_fill_manual(values = c("#A3A7A2","#67AEC3")) +
+  coord_flip() +
+  theme(legend.position = "none") +
+  labs(x="Loan Status",y="Percent of Loans",  
+       title = "Prosper Loan Status (2006-2014) in percentages")
+```
+
+
+Close to 86% of Prosper loans complete on time. 
+
+
+The remaining approximately 14% of loans have a risk of being charged off. 
+Charged off loans remain either fully or partially uncollected. 
+Unfortunately, Prosper data does not contain information about charged off 
+loans recovery, but sources on the internet quote this number at about 16% *.
+
+(* Source: https://www.orchardplatform.com/blog/understanding-loan-statuses/)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=8, plot13}
+qplot(x=LoanStatus, 
+      data= subset(prosper.loan, !(LoanStatus %in% c("Current" ,"Completed","Cancelled","FinalPaymentInProgress"))),
+      fill = I("#A3A7A2")) +
+  theme(text = element_text(size=12))+
+  coord_flip() +
+  labs(x="Loan Default Status",y="Number of Loans",  
+       title = "Defaulted and Charged off loans in Prosper (2006-2014)") +
+  theme(plot.margin = unit(c(0.5,0.5,0.5,0.5), "cm"))
+```
+
+
+
+**First defaults**
+
+How long does it take before borrowers start defaulting on their loans? 
+Prosper offers loans for a period of 1, 3 and 5 year terms with most borrowers 
+choosing the 3 year term.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot14}
+grid.arrange(
+  qplot(x=LoanFirstDefaultedCycleNumber, data=prosper.loan, binwidth=1, 
+      fill=I("#67AEC3"), color = I("black")) +
+  labs(x="Cycle Number",y="Number of Defaulted Loans"),
+  
+  qplot(x=1, y=LoanFirstDefaultedCycleNumber, data=prosper.loan, geom="boxplot") +
+    labs(y="Loan first defaulted cycle"),
+  
+  nrow=1 , top=textGrob("When do borrowers first default on their loans?")
+)
+
+
+```
+
+
+Most of the first defaults happen between months 8 and 22. There are some outliers
+that default after 40 months of the loan period. But it is clear that borrowers 
+that continue payment for most of their loan term, do tend to pay the loan in full.
+
+
+**Lender Yields**
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot14.1}
+grid.arrange(
+  qplot(x=LenderYield, data=prosper.loan, binwidth = 0.0125,
+      fill=I("#67AEC3"), color = I("black")) +
+  labs(x="Lender Yield",y="Number of lenders"),
+  
+  qplot(x=1, y=LenderYield, data=prosper.loan, geom="boxplot") +
+    labs(y="Lender Yield"),
+  
+  nrow=1 , top=textGrob("How are the lender yields distributed?")
+)
+```
+
+As we can see from the distribution and the bos plot, the lender yields are mostly
+in the ranfe of 12% to 24%. There are a few outliers in the 45% to 50% range but 
+these are too high to be a repeating phonomena.
+
+
+**Borrower Rate**
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot14.2}
+grid.arrange(
+  qplot(x=BorrowerRate, data=prosper.loan, binwidth = 0.0125,
+      fill=I("#67AEC3"), color = I("black")) +
+  labs(x="Borrower Rate",y="Number of borrowers"),
+  
+  qplot(x=1, y=BorrowerRate, data=prosper.loan, geom="boxplot") +
+    labs(y="Borrower Rate"),
+  
+  nrow=1 , top=textGrob("How are the borrower rates distributed?")
+)
+```
+
+
+We can see the same patterns with borrower rate (as lender's yield). This is makes
+sense as these 2 variables areclosely related.
+
+
+**Loan Amounts**
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot14.3}
+grid.arrange(
+  qplot(x=LoanOriginalAmount, data=prosper.loan, binwidth = 1000,
+      fill=I("#67AEC3"), color = I("black")) +
+  labs(x="Loan original amount",y="Number of borrowers"),
+  
+  qplot(x=1, y=LoanOriginalAmount, data=prosper.loan, geom="boxplot") +
+    labs(y="Loan original amount"),
+  
+  nrow=1 , top=textGrob("How much money do people borrow on Prosper?")
+)
+```
+
+
+The borrowing amounts are in the range of $4,000 to $12,000 with the a much lower
+median amount at approximately $6,000.
+
+
+**Number of investors per loan**
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot14.4}
+grid.arrange(
+  qplot(x=Investors, data=prosper.loan, binwidth = 25,
+      fill=I("#67AEC3"), color = I("black")) +
+  labs(x="Number of investors",y="Count of loans"),
+  
+  qplot(x=1, y=Investors, data=prosper.loan, geom="boxplot") +
+    labs(y="Number of investors"),
+  
+  nrow=1 , top=textGrob("How many lenders is a loan comprised of?")
+)
+```
+
+Most of the loans have anywhere upto 125 investors and the median number of investors
+is at about 50. There are loans with over 250 investors but these are far and few.
+
+
+
+##Univariate Analysis##
+
+###What is the structure of your dataset?###
+
+The prosper loan dataset has 113937 observations of 81 variables.
+
+These 81 variables describe the loan, the borrower's profile, payments and the 
+lender's yield and charges.
+
+These are the variables I am interested in for this analysis.
+
+1. $ Term                               : int  36 36 36 36 36 60 36 36 36 36 ???
+2. $ LoanStatus                         : Factor w/ 12 levels "Cancelled","Chargedoff",..: 3 4 3 4 4 4 4 4 4 4 ...
+3. $ BorrowerRate                       : num  0.158 0.092 0.275 0.0974 0.2085 ???
+4. $ LenderYield                        : num  0.138 0.082 0.24 0.0874 0.1985 ???
+5. $ ProsperRatingAlpha                 : Factor w/ 7 levels "A","AA","B","C",..: NA 1 NA 1 5 3 6 4 2 2 ???
+6. $ ListingCategory (numeric)          : int  0 2 0 16 2 1 1 2 7 7 ???
+7. $ Occupation                         : Factor w/ 67 levels "Accountant/CPA",..: 36 42 36 51 20 42 49 28 23 23 ???
+8. $ CreditScoreRangeLower              : int  640 680 480 800 680 740 680 700 820 820 ???
+9. $ CurrentCreditLines                 : int  5 14 NA 5 19 21 10 6 17 17 ???
+10. $ InquiriesLast6Months               : int  3 3 0 0 1 0 0 3 1 1 ???
+11. $ CurrentDelinquencies               : int  2 0 1 4 0 0 0 0 0 0 ???
+12. $ DebtToIncomeRatio                  : num  0.17 0.18 0.06 0.15 0.26 0.36 0.27 0.24 0.25 0.25 ???
+13. $ IncomeRange                        : Factor w/ 8 levels "$0","$1-24,999",..: 4 5 7 4 3 3 4 4 4 4 ???
+14. $ LoanOriginalAmount                 : int  9425 10000 3001 10000 15000 15000 3000 10000 10000 10000 ???
+15. $ LoanOriginationDate                : Factor w/ 1873 levels "2005-11-15 00:00:00",..: 426 1866 260 1535 1757 1821 1649 1666 1813 1813 ...
+16. $ LoanOriginationQuarter             : Factor w/ 33 levels "Q1 2006","Q1 2007",..: 18 8 2 32 24 33 16 16 33 33 ???
+17. $ Investors                          : int  258 1 41 158 20 1 1 1 1 1 ...
+
+###What is/are the main feature(s) of interest in your dataset?###
+
+The main features of interest for me in this dataset are to:
+
+1. Identify what factors influence the Borrower's rate. What is the impact of 
+ProsperRating, CreditScoreRange and IncomeRange on Borrower's rate?
+
+2. What type of loans, credit profiles and prosper ratings do investors look 
+for? How much do they invest in different borrower profiles?
+
+3. Prosper changed its business model in around 2009. From 2005 to 2008, 
+Prosper operated in an eBay style aution model, where lenders and borrowers 
+determined the lending rate by an auction. In 2009, it moved to a lending rate 
+determined by Prosper based on the borrower's credit risk and other details. 
+Also, around Novemeber 2008, Prosper was pulled out of business by the SEC 
+and Prosper came back to business after obtaining SEC registration in 2009. 
+I am intersted in investigating what impact these changes had in Prosper?
+
+
+###What other features in the dataset do you think will help support your investigation into your feature(s) of interest?###
+
+1. The Borrower's rate is designed to compensate the investor for the risk 
+they undertake. Higher risk = higher borrower's rate. The risk here is mainly 
+that of delinquency. So I want to look at what factors are an indication of an 
+impending delinquency? Can current delinquencies and debt to income ratio help 
+understand if a borrower will default on a loan?
+
+2. PropserRating is another factor that infuences the Borrower's rate. Prosper 
+uses Credit Profile information including a borrower's credit score to arrive 
+at this rate. What is the relationship between Prosper Rating and Credit Score? 
+
+3. What type of loans do lenders want to invest in?
+
+###Did you create any new variables from existing variables in the dataset?###
+
+1. I created a new variable called Listing Category which adds desciption 
+labels to the numbers in ListingCategory (numeric) field. The data contains 
+only the numeric value of Listing Category. The mapping of numeric value to 
+desciption avaialble in the prosper variable definitions sheet was used to 
+create this variable.
+  + 0 - Not Available, 1 - Debt Consolidation, 2 - Home Improvement, 
+  3 - Business, 4 - Personal Loan, 5 - Student Use, 6 - Auto, 7- Other, 
+  8 - Baby&Adoption, 9 - Boat, 10 - Cosmetic Procedure, 11 - Engagement Ring, 
+  12 - Green Loans, 13 - Household Expenses, 14 - Large Purchases, 
+  15 - Medical/Dental, 16 - Motorcycle, 17 - RV, 18 - Taxes, 
+  19 - Vacation, 20 - Wedding Loans
+
+2. I renamed the varaible ProsperRating (Alpha) to ProsperRatingAlpha 
+for ease of use.
+
+3. I created a new variable called Delinquent which is set to 1 for loans 
+that are past due, charged off or defaulted and 0 for the others. This variable 
+will be used to analyze Prosper's loan performance over time.
+
+4. I created a new variable called CreditLowerBucket which groups the 
+CreditScoreRangeLower into 3 buckets. 
+720 and above - Low Risk, 600-719 - Medium Risk, Less then 600 - High Risk. 
+This will be used in various plots to see the credit spread of borrowers.
+
+5. I created a new variable called InvestorCountBucket that groups the number of 
+investors into buckets. 0-100, 101-200, 201-300, greater than 300. This will be 
+used to understand the investment patterns of lenders.
+
+###Of the features you investigated, were there any unusual distributions? 
+Did you perform any operations on the data to tidy, adjust, or change the 
+form of the data? If so, why did you do this?###
+
+1. I log transformed the right skewed DebtToIncomeRatio distribution. 
+As most of the DebtToIncomeRatio values are concentrated between 0 and 1, 
+the shape of the distribution was not visible a normal scale.
+
+2. I converted the factor variable LoanOriginationDate into a Date variable so 
+that date operations can be easily performed.
+
+3. I ordered the factors ProsperRatingAlpha, IncomeRange and LoanOriginationDate 
+in a logical manner.
+
+  + ProsperRating (Alpha) - Best -> Worst : "AA","A","B","C","D","E","HR","NA"
+
+4. Income Range - Lowest -> Highest (Ignoring Not Displayed) : "Not employed", 
+"$0", "$1-24,999","$25,000-49,999","$50,000-74,999","$75,000-99,999","$100,000+",
+"Not displayed"
+
+5. LoanOriginationQuarter - Ordered by Year: Q1 2006","Q2 2006","Q3 2006",
+"Q4 2006","Q1 2007",...
+
+
+##Bivariate Plots Section##
+```{r}
+
+```
+
+I want to start off the Bivariate Plots with a ggpairs visual of 10 variables 
+that I am most intertested in for this analysis.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot15, fig.width=12, fig.height=10}
+set.seed(12345)
+prosper.sample <- prosper.loan[sample(1:length(prosper.loan$ListingKey), 10000), ]
+sample.variables <- c("IncomeRange",
+                      "BorrowerRate",
+                      "LenderYield",
+                      "CreditScoreRangeLower",
+                      "CurrentCreditLines",
+                      "InquiriesLast6Months",
+                      "CurrentDelinquencies",
+                      "DebtToIncomeRatio",
+                      "LoanFirstDefaultedCycleNumber",
+                      "ProsperRatingAlpha")
+prosper.sample.subset <- prosper.sample[,sample.variables]
+
+ggpairs(prosper.sample.subset) +
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.line = element_blank())
+```
+
+
+A correlation plot shows the relationship between continuous variables in a more
+readable format.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+ggcorr(prosper.sample.subset,hjust = 0.9, size=3, color="grey50", layout.exp=2, label = TRUE)
+```
+
+
+From the plot, we can see some clear relationships.
+
+* The Credit score has an negative correaltion with the rate the borrower pays 
+and the lender's yield. The correaltion is not very strong at -0.45.
+
+* The credit score also seems to have a negative correlation with the number of 
+current delinquencies.
+
+* The box plot of income range and debt to income ratio seems to have some 
+pattern.
+
+* The last variable that seems to play an important role is Prosper Rating. 
+Prosper rating affects the borrower rate and the lender yield.
+
+I want to start with exploring relationships between some of these variables.
+
+
+**Lender yield and borrower credit score**
+
+As expected, the lender yield and the borrower rate decrease as the credit 
+scores improve. Better credit scores offer lower risk and hence lower 
+borrowing rate and lender yield.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot16}
+# Plot Credit score and lender yield
+ggplot(aes(x=CreditScoreRangeLower,y = LenderYield) , data = prosper.loan) +
+  geom_jitter(alpha=1/100, color = "#FF9933") +
+  stat_smooth(method="lm", linetype = 1,size = 1, color = "blue") +
+  coord_cartesian(xlim = c(400,900)) +
+  labs(x="Borrower Credit Score",y="Lender Yield",  
+       title = "The lender yield decreses with a better borrower credit score")
+```
+
+
+**Borrower rate and borrower credit score**
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot17}
+#Plot credit score and brrower rate
+
+ggplot(aes(x=CreditScoreRangeLower,y = BorrowerRate) , data = prosper.loan) +
+  geom_jitter(alpha=1/100, color = "#FF9933") +
+  stat_smooth(method="lm", linetype = 1,size = 1, color = "blue") +
+  coord_cartesian(xlim = c(400,900)) +
+  labs(x="Borrower Credit Score",y="Borrower Rate",  
+       title = "The borrower rate decreses with a better credit score")
+```
+
+
+**Current delinquencies and borrower credit score**
+
+Borrowers with better credit scores have fewer delinquencies on their loans. 
+Though this does not indicate that the borrower will not fail payments in the 
+future, it is an indication of credit worthiness of the borrower.
+
+As I expected, the number of delinquencies decreses with a better credit score.
+
+Credit score is an important parameter to consider in further analysis.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot18}
+#Plot credit score and current delinquencies
+ggplot(aes(x=CreditScoreRangeLower,y = CurrentDelinquencies) , data = prosper.loan) +
+  geom_jitter(alpha=1/100, color="#33B8FF") +
+  stat_smooth(method="lm", linetype = 1,size = 1, color = "blue") +
+  coord_cartesian(xlim = c(400,900), ylim = c(0,20)) +
+  labs(x="Borrower Credit Score",y="Number of Current Delinquencies",  
+       title = "Borrowers will higher credit scores have fewer delinquencies")
+```
+
+
+**Debt to income ratio of borrowers across income ranges**
+
+
+The very high debt to income ratios belong to borrowers who are unemployed. 
+Among the borrowers with an income, the debt to income ratio seems well 
+within 1 and decreses as the income increases.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot19}
+# Plot income range and debt to income ratio
+ggplot(aes(x=IncomeRange, y=DebtToIncomeRatio),data=prosper.loan) +
+  theme(text = element_text(size=9)) +
+  geom_boxplot() +
+  labs(x="Income Range (USD)",y="Debt To Income Ratio",  
+       title = "Debt to Income Ratio of borrowers across income range")
+```
+
+Not employed category has a huge debt to income ratio and that makes the rest of 
+the data hard to read. Omitting the not employed category and limiting the
+debt to income ratio to 1 will give a better chart.
+
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot19.1}
+# Plot income range and debt to income ratio
+ggplot(aes(x=IncomeRange, y=DebtToIncomeRatio),
+       data=subset(prosper.loan, !(IncomeRange %in% c("Not employed")))) +
+  theme(text = element_text(size=9)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0,1)) +
+  labs(x="Income Range (USD)",y="Debt To Income Ratio",  
+       title = "Debt to Income Ratio of borrowers across income range")
+```
+
+
+**Prosper rating and loan defaults**
+
+A better prosper rating means the borrower might continue paying the loan for a 
+slightly longer period. But this doesn't give anything interesting.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot20}
+# Plot prosper rating and loan first deafult cycle
+ggplot(aes(x=ProsperRatingAlpha, y=LoanFirstDefaultedCycleNumber),data=subset(prosper.loan, !is.na(ProsperRatingAlpha))) +
+  geom_boxplot() +
+  labs(x="Prosper Rating \n (High to Low -->)",y="First Default Cycle",  
+       title = "Do borrowers with better rating default later?" , 
+       subtitle = "There is a minor trend that borrowers with better rating default later ")
+```
+
+
+**Prosper rating and borrower rate**
+
+
+Propser uses various factors to arrive at a borrower rate for the loan. 
+My assumption is Prosper rating also uses most of the same factors. 
+Hence there should be relation between Prosper Rating and Borrower Rate.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot21}
+# Plot prosper rating and borrowe rate
+ggplot(aes(x=ProsperRatingAlpha, y=BorrowerRate),
+       data=subset(prosper.loan, !is.na(ProsperRatingAlpha))) +
+  geom_boxplot() +
+  geom_hline(aes(yintercept = mean(prosper.loan[["BorrowerRate"]])),
+             linetype = 2,color = "#125BEC") +
+  # Annotate horizontal line  
+  annotate("text", x='AA', y=0.21, 
+           label = "Mean rate for \n all borrowers", color = "#08AAFA" ) +
+  labs(x="Prosper Rating \n (High to Low -->)",y="Borrower Rate",  
+       title = "Borrower rate increases with decrease in Prosper Rating" , 
+       subtitle = "Borrowers rated D,E and HR pay more than the mean borrowing rate")
+  
+```
+
+```{r}
+by(prosper.loan$BorrowerRate,prosper.loan$ProsperRatingAlpha,summary)
+```
+
+
+Indeed, the median borrower rate increases as the Prosper Rating moves from 
+AA to HR.
+
+A prosper borrower with a rating of AA gets a rate that is less than half the 
+mean borrowing rate on Prosper.
+
+
+**Lender yield and prosper rating**
+
+
+Lender's yield is calculated from Borrower rate, so it is expected that the 
+Lender's yield will follow the same pattern.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot22}
+# Plot prosper rating and lender yield
+ggplot(aes(x=ProsperRatingAlpha, y=LenderYield),
+       data=subset(prosper.loan, !is.na(ProsperRatingAlpha))) +
+  geom_boxplot() +
+  geom_hline(aes(yintercept = mean(prosper.loan[["LenderYield"]])),
+             linetype = 2,color = "#125BEC") +
+  # Annotate horizontal line  
+  annotate("text", x='AA', y=0.189, label = "Mean rate for \n all lenders", 
+           color = "#08AAFA" ) +
+  labs(x="Prosper Rating \n (High to Low -->)",y="Lender Yield",  
+       title = "Lender yield increases with decrease in Prosper Rating" , 
+       subtitle = "Higher the risk, higher the lender yield rate")
+  
+```
+
+
+**Credit scores and prosper rating**
+
+
+The credit scores are probably one of the factors that determine the prosper 
+rating. There is a decreasing trend in credit scores as we move from prosper 
+rating AA to A.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot23}
+# Plot credit scores and prosper rating
+ggplot(aes(x=ProsperRatingAlpha, y=CreditScoreRangeLower),
+       data=subset(prosper.loan, !is.na(ProsperRatingAlpha)))+
+  geom_boxplot() +
+  coord_cartesian(ylim = c(500,900)) +
+  labs(x="Prosper Rating \n (High to Low -->)",y="Credit Score",  
+       title = "Prosper rating decreases with a decrease in credit score")
+```
+
+
+**Contribution Per Investor**
+
+
+Next I want to look at investing patterns of lenders. The lenders can invest 
+anywhere between $25 and $35,000. Each loan can be funded by multiple investors. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot9}
+# A boxplot showing the loan amount per investor in loans of different 
+# Prosper Ratings
+
+# Boxplot
+ggplot(aes(x=ProsperRatingAlpha, y = LoanOriginalAmount/Investors), 
+       data = subset(prosper.loan, !is.na(ProsperRatingAlpha))) +
+  geom_boxplot() +
+  # Plot the mean per investor investment per prosper rating
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..),
+                 width = .75, linetype = "dashed", color = "blue") +
+  labs(x="Prosper Rating \n (High to Low --->)",
+       y="Contribution per investor (USD)",  
+       title = "Contribution per investor for each Prosper Rating")
+```
+
+The 3rd quartile for all ratings are below $10,000. Rates start at 5.99% for a 
+3-year AA loan and go up to 31.72% for an HR loan. Loans in Prosper Ratings 
+A,B and C seem to be the most popular among investors. AA rated loans are 
+less popular because of the low rate of return. Loans rated D,E and HR are 
+high risk and hence investors seem to be contributing smaller amount in 
+these loans.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot10}
+# A boxplot showing the loan amount per investor in loans of different 
+# Prosper Ratings
+
+# Boxplot
+ggplot(aes(x=ProsperRatingAlpha, y = LoanOriginalAmount/Investors), 
+       data = subset(prosper.loan, !is.na(ProsperRatingAlpha))) +
+  geom_boxplot() +
+  # Plot the mean per investor investment per prosper rating
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..),
+                 width = .75, linetype = "dashed", color = "blue") +
+  # Limit Y axis to 15000
+  coord_cartesian(ylim = c(0,15000)) +
+  labs(x="Prosper Rating \n (High to Low --->)",
+       y="Contribution per investor (USD)",  
+       title = "Contribution per investor for each Prosper Rating" , 
+       caption = "Blue dotted line represents the Mean")
+```
+
+
+```{r}
+by(prosper.loan$LoanOriginalAmount/prosper.loan$Investors, prosper.loan$ProsperRatingAlpha, summary)
+```
+
+
+
+**Changes in prosper loans over time**
+
+When prosper came back to business in 2009, there seems to be a stricter 
+limit on the credit scores allowed to borrow on prosper.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=8, plot24}
+# Plot mean borrower CreditScoreRangeLower per year 
+ggplot(aes(x=LoanOriginationQuarter, y=CreditScoreRangeLower), 
+       data = subset(prosper.loan, !is.na(LoanOriginationQuarter))) +
+  geom_line(aes(group=1),stat='summary', fun.y = mean) +
+  
+# Add a vertical inercept for the quarters when Prosper 
+  # closed business and reopened business
+ geom_vline(aes(xintercept = which(levels(LoanOriginationQuarter) == 'Q3 2008')),
+            linetype = 2,color = "#F00A0A") + 
+  geom_vline(aes(xintercept = which(levels(LoanOriginationQuarter) == 'Q2 2009')-1),
+             linetype = 2,color = "#737374") +
+  
+# Set theme size, adjust x axis labels to avoid overlap
+  theme(text = element_text(size=10))+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 4)) +
+  
+# Limit y axis to 580-720 as valid credit scores fall in this range
+  coord_cartesian(ylim = c(580,720)) +
+  
+# Annotate the vertical lines
+  annotate("text", x='Q4 2007', y=700, label = "Prosper closed business", 
+           color="#F00A0A") +
+  annotate("text", x='Q2 2010', y=720, label = "Prosper reopened its business", 
+           color = "#737374" ) +
+
+# Add axis labels, title  
+  labs(x="Loan Origination Quarter",y="Mean Credit Score",  
+       title = "Mean borrower credit score from 2006-2014 on Prosper", 
+       subtitle = "Credit scores on Prosper have stayed above 690 since its reopening in 2009 showing stricter filtering of borrowers", 
+       caption = "There is a break in Q1 2008 when Prosper was not in business")
+  
+```
+
+In Q3 2008, Prosper was pulled out of business by the SEC. Around the same time, 
+Prosper also changed its business model. Earlier interest rates on Prosper were 
+determined by an auction mechanism. Prosper introduced Prosper Rating to rank 
+its borrowers and pre-determined the interest rate based on this rating.
+
+What about the borrower profiles on Prosper? Did they change? From this graph 
+above it looks like Prosper enforced stricter credit mechanisms after reopening 
+in 2009. Pre 2009, the credit scores of borrowers in Prosper never averaged to 
+over 700. It went as low as 580 in 2006. 
+
+Between 2009 and 2014, the mean credit scores have been in the range of 680 and 
+above. One reason for this could be the borrower rate. Prosper may be charging a 
+higher rate for borrowers with a lower credit score.
+
+Another reason could be practices around non-payment of loans. As per Prosper, 
+delinquent customers take a hit to the credit score and are also not allowed to 
+borrow from Prosper anymore. Though there is no way to validate this, it may 
+have over time reduced the number of borrowers in the less than 600 credit 
+score range.
+
+
+**What about Debt to Income Ratio over time?**
+
+As the credit scores of borrowers improved, I was curious to see if the debt to 
+income ratios also improved. Better credit scores do not necessarily mean lower 
+debt to income ratios, so I wanted to see how it played out for Prosper's 
+borrowers.
+
+Since the ratio seems concentrated at the lower end, I want to zoom in and look 
+at DebtToIncomeRatio upto 1.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=6, plot26}
+#Plot debt to income ratio per quater
+ggplot(aes(x=LoanOriginationQuarter, y=DebtToIncomeRatio), 
+       data = subset(prosper.loan, !is.na(LoanOriginationQuarter))) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0,1.0)) +
+  theme(text = element_text(size=10))+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 4)) +
+  
+  # Add axis labels, title  
+  labs(x="Loan Origination Quarter",y="Debt to Income Ratio",  
+       title = "Debt to Income Ratio of borrowers from 2006-2014 on Prosper",
+       subtitle = "Debt to Income Ratio has statyed almost constant through this period", 
+       caption = "There is a break in Q1 2008 when Prosper was not in business")
+```
+
+
+There hasnt been much of a variation with Debt to Income Ratio except for a 
+brief spike during Prosper's initial years.
+
+
+**Loan amount in Prosper**
+
+
+The average amount of money lent to customers has been on the rise since 2009.
+
+There is a drop in 2009 when Prosper reopened for business. 
+It has been on a rise ever since and is probably just a business trend as more 
+people hear about Prosper and invest in prosper loans.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=8, plot27}
+# Plot loan amount per quarter
+ggplot(aes(x=LoanOriginationQuarter, y=LoanOriginalAmount), 
+       data = subset(prosper.loan, !is.na(LoanOriginationQuarter))) +
+  
+# Mean of loan amount per quarter
+  geom_bar(stat='summary',fun.y = mean, fill = I("#76ADD8")) +
+  
+# Vertical intercept to indicate Prosper reopening
+  geom_vline(aes(xintercept = which(levels(LoanOriginationQuarter) == 'Q2 2009')-1),
+             linetype = 2,color = "#737374")+
+  
+# Annotate vertical line  
+  annotate("text", x='Q2 2010', y=10000, 
+           label = "Prosper reopened its business", color = "#737374" ) +
+  theme(text = element_text(size=10))+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 4)) +
+  
+  # Add axis labels, title  
+  labs(x="Loan Origination Quarter",y="Mean Loan Amount",  
+       title = "Mean loan amount from 2006-2014 on Prosper", 
+       subtitle = "The mean loan amount has steadily been on the rise 
+       since 2009", 
+       caption = "There is a break in Q1 2008 when Prosper was not in business")
+```
+
+
+
+**How have these loans performed?**
+
+So more money is being invested in Prosper. But what about performance?
+
+To see the trend in loan performance, I created a new variable called 
+"delinquent" that takes 0 and 1 as values. Loans with status Past due by any 
+number of days, charged off or defaulted will be marked 1. 
+The rest of the loans are marked 0.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot28}
+
+# Create a new dataframe del.by.quarter which groups the delinquencies by 
+# loan origination quarter
+
+del.by.quarter <- prosper.loan %>%
+  group_by(LoanOriginationQuarter) %>%
+  summarise(count = sum(delinquent), 
+            percent = (sum(delinquent)/length(delinquent)) * 100)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=8, plot29}
+# Plot delinquency percent per quarter
+
+ggplot(aes(x=LoanOriginationQuarter,y=percent),
+       data = subset(del.by.quarter, !is.na(LoanOriginationQuarter))) +
+  geom_line(aes(group=1)) +
+  
+  # Show the Prosper reopening business with a vertical intercept
+  geom_vline(aes(xintercept = which(levels(LoanOriginationQuarter) == 'Q2 2009')-1),
+             linetype = 2,color = "red")+
+  
+  # Annotate vertical line  
+  annotate("text", x='Q2 2010', y=30, label = "Prosper reopened its business", 
+           color = "#737374" ) +
+  
+  # Adjust x-axis labels to avoid overlap
+  theme(text = element_text(size=10))+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 4)) +
+  
+   # Add axis labels, title  
+  labs(x="Loan Origination Quarter",y="Percentage of loans delinquent",  
+       title = "Loan performance from 2006-2014 on Prosper", 
+       caption = "There is a break in Q1 2008 when Prosper was not in business")
+```
+
+The percentage of delinquent loans on Prosper has decreased since its opening 
+years. But the drop between 2012 to 2014 may just be because of more 
+current loans during the period.
+
+I wanted to look at numbers instead of percentages to offset the impact of 
+current loans in 2013 and 2014.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=8, plot30}
+# Plot delinquency percent per quarter
+
+ggplot(aes(x=LoanOriginationQuarter,y=count),
+       data = subset(del.by.quarter, !is.na(LoanOriginationQuarter))) +
+  geom_line(aes(group=1)) +
+  
+  # Show the Prosper reopening business with a vertical intercept
+  geom_vline(aes(xintercept = which(levels(LoanOriginationQuarter) == 'Q2 2009')-1),
+             linetype = 2,color = "red")+
+  
+  # Annotate vertical line  
+  annotate("text", x='Q2 2010', y=30, label = "Prosper reopened its business", 
+           color = "#737374" ) +
+  
+  # Adjust x-axis labels to avoid overlap
+  theme(text = element_text(size=10))+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 4)) +
+  
+   # Add axis labels, title  
+  labs(x="Loan Origination Quarter",y="Number of loans delinquent",  
+       title = "Loan performance from 2006-2014 on Prosper", 
+       caption = "There is a break in Q1 2008 when Prosper was not in business")
+```
+
+The drop in Q2 2009 should be due to Prosper's shut down in the previous 
+quarters as explained by the steady rise afterwards. 
+
+There is a drop towards the beginning of 2013 and it is probably explained 
+by when most borrowers default on their loans.
+
+Most of the first defaults happen between months 6 and 16. This explains the 
+sharp drop in 2012-2013. A reason could be that the loans taken during 2013 are 
+still in the intial phase and defaults haven't happened yet. Prosper's shut 
+down in 2008 and a slow rise in loan amount in the immediate period following 
+the reopen, may explain the drop in defaults in 2012-2013.
+
+It would be interesting to see the performance of loans upto 2017, especially 
+since the break in 2009 alters the shape of this graph.
+
+
+##Bivariate Analysis##
+
+###Talk about some of the relationships you observed in this part of the investigation. How did the feature(s) of interest vary with other features in the dataset?###
+
+The borrower rate varies with the prosper rating. Borrowers with a poor 
+prosper rating pay more than double the interest rate that a borrower with a 
+good prosper rating pays.
+
+The credit score is one the strongest contributors to the Prosper Rating. 
+A good credit score means a good Prosper Rating.
+
+Prosper's lending patterns seem to have changed since its change in business 
+model and reopening in 2009. The mean credot score of borrowers has improved 
+since 2009 and the average score has been over 680 since then. This could be 
+due to the change in business model where Prosper determines the rate of 
+interest for a borrower as opposed to an aution model pre-2009. The rate of 
+interest may not be too appealing for users with a poor credit score.
+
+###Did you observe any interesting relationships between the other features (not the main feature(s) of interest)?###
+
+I noticed that the number of current delinquencies is an indicator of credit of 
+a borrower. Borrowers with a good credit score have fewer delinquencies.
+
+I expected to see some variation in Debt to Income ratio over time and with 
+income range. I was surprised to see that neither of this was the case.
+
+###What was the strongest relationship you found?###
+
+The strongest relationship I found was between Prosper Rating and 
+Borrower Rate/Lender Yield.
+
+##Multivariate Plots Section##
+
+Continuing the analysis from the previous section, I want to see what credit 
+range these delinquent loans fall into.
+
+**What is the credit bucket for the delinquent loans?**
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot31}
+
+# Create a new dataframe dal.by.credit which groups delinquencies by credit bucket
+del.by.credit <- subset(prosper.loan,!is.na(CreditLowerBucket)) %>%
+  group_by(CreditLowerBucket) %>%
+  summarise(sum = sum(delinquent) ,count = length(delinquent) , 
+            percent = (sum(delinquent)/length(delinquent)) * 100)
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot32}
+
+ggplot(aes(x=CreditLowerBucket, y=percent), data=del.by.credit)+
+  geom_bar(stat = "identity") +
+    # Add axis labels, title  
+  labs(x="Credit Score Bucket",y="Percent of loans delinquent",  
+       title = "Loans with a credit score less than 600 contribute to most delinquencies")
+```
+
+
+**What income range do these credit score buckets fall into?**
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=8, plot33}
+ggplot(aes(x=IncomeRange, y= CreditScoreRangeLower), 
+       data=subset(prosper.loan,IncomeRange != "Not displayed")) +
+  geom_jitter(alpha=1/5,aes(color=CreditLowerBucket)) +
+    # Add axis labels, title  
+  labs(x="Income Range",y="Credit Score",  
+       title = "Credit Scores across Income Ranges on Prosper") +
+  theme(legend.position = "top") +
+  labs(color = "Credit Score Bucket")
+```
+
+
+The credit scores are spread across the income ranges and this makes sense 
+because income plays an indirect role on the credit score.
+
+
+The borrower rate increases with a poor Prosper rating. Prosper did not have 
+these ratings prior to 2009 and those records appear as NA. It is interesting 
+to see that a lot of the high risk loans appear in the NA bucket. This is another 
+indication that there are fewer borrowers in Propser with credit scores 
+less than 600 since 2009.
+
+
+
+
+
+**Credit score and lender yield over time**
+
+
+Since credit scores have a strong relation to prosper rating and hence to the 
+lender yield, I wanted to see how the relationship between credit score and 
+lender yield has evolved over time.
+
+The black line represents the average lender yield for a credit score bucket.
+The blue line represents the overall average lender yield.
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, meanbyyear}
+# Create a new dataframe mean.by.year which calcualtes the meam lender yield per 
+# year
+mean.by.year <- prosper.loan %>%
+  group_by(year=format(LoanOriginationDate, "%Y")) %>%
+  summarise(mean = mean(LenderYield))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=8, plot36}
+ggplot(aes(x=format(LoanOriginationDate, "%Y"), y=LenderYield), 
+       data=subset(prosper.loan, !is.na(CreditLowerBucket))) +
+  geom_line(stat = 'summary', fun.y = mean, aes(group=1)) +
+  geom_line(data=subset(mean.by.year, year!=2005), aes(x=year, y=mean, group=1),
+            linetype = 2, color = 'blue')+
+  facet_grid(CreditLowerBucket~.) +
+  theme_light(base_size = 12) +
+    labs(x="Loan Origination Year",y="Lender Yield",  
+         title = "Mean Lender Yield per year for various credit categories",
+         subtitle = "The medium risk category provides higher returns 
+         with moderate risk") +
+  labs(caption = "Blue dotted line represents the mean lender yield 
+       for the year")
+  
+```
+
+
+The plots match my expectation. 
+
+* The high risk loans promise a yield above average and the low risk ones 
+promise a yield below average.
+
+* The medium risk loans seem like a good bet, offering returns closer to the 
+average.
+
+* The overall returns though seem to be on a downward trend since 2012.
+
+
+**Lender yield and Prosper score**
+
+
+How about lender yield and prosper score. I expected them to show a similar 
+relation.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=7,plot37}
+ggplot(aes(x=format(LoanOriginationDate, "%y"), y=LenderYield), 
+       data=subset(prosper.loan, !is.na(ProsperRatingAlpha))) +
+  geom_boxplot() +
+  facet_grid(~ProsperRatingAlpha) +
+  theme_minimal(base_size = 12) +
+   labs(x="Loan Origination Year",y="Lender Yield",  
+        title = "Lender Yield per year for various Prosper Ratings",
+        subtitle = "The lender yield increases with decrease in Prosper Rating.")
+```
+
+This shows a similar relation as the credit scores and lender yield. 
+The yield increases with investment in a poorer prosper rating.
+
+There is not a lot of variation in AA and A rated loans from 2009 to 2014. The B,
+c, D and E rated loans have seem a dip in the lender yields from 2012. 
+The HR rated loans also yield lesser returns since 2011 and interestingly the
+variation in rates within HR catgory has dropped siginificantly compared to 
+2009.
+
+
+**Lender yield, prosper rating and credit score**
+
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=7, plot38}
+ggplot(aes(x=format(LoanOriginationDate, "%y"), y=LenderYield), 
+       data=subset(prosper.loan, !is.na(ProsperRatingAlpha))) +
+  geom_line(stat = 'summary', fun.y = mean, aes(group=1,
+                                                color = CreditLowerBucket)) +
+  facet_grid(CreditLowerBucket~ProsperRatingAlpha) +
+  theme_minimal(base_size = 12) +
+  # Move legend to bottom
+  theme(legend.position = "top") +
+  # Remove the legend title
+  labs(color = "") +
+  labs(x="Loan Origination Year",y="Lender Yield",  
+       title = "Mean Lender Yield grouped by Credit Category and Prosper Ratings")
+```
+Within a prosper rating, the average lender yield does not vary much. 
+No matter what the borrower's credit score is, a prosper rating of E gives an 
+average lender yield of approximately 20%. 
+
+Within the same credit score bucket, a poorer prosper rating gives better 
+yields. A credit score of 720 and above in AA rating yields about 5% return but 
+the same credit score in E yields about 25%.
+
+This is another indication that prosper's rating is influenced by a lot more 
+factors, though credit score seems to be one of the contributors.
+
+
+**Investment Patterns**
+
+Do investors look for a safety net when investing in high risk loans? Based on 
+the credit rating and  prosper score for a borrower, I wanted to analyse if 
+there are more number of investors for poorly rated loans. In other words, 
+do investors try to reduce their risk by reducing the amount they invest in 
+poorly rated loans?
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot39}
+
+ggplot(aes(x=ProsperRatingAlpha, y=CreditScoreRangeLower), data=prosper.loan) +
+  geom_jitter(alpha = 1/3,aes(color = InvestorCountBucket)) +
+  scale_colour_brewer(palette ="PRGn") +
+  labs(color = "Number of investors per loan") +
+  labs(x="Prosper Rating",y="Borrower Credit Score",  
+       title = "AA rated loans see more investors per loan")
+
+```
+
+
+
+The NA rating is not adding much value, so filtering it will give me a better picture.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, plot40}
+ggplot(aes(x=ProsperRatingAlpha, y=CreditScoreRangeLower), 
+       data=subset(prosper.loan, !is.na(ProsperRatingAlpha))) +
+  geom_jitter(alpha = 1/10, aes(color = InvestorCountBucket)) +
+  scale_colour_brewer(palette ="PRGn") +
+  labs(color = "Number of investors per loan") +
+  labs(x="Prosper Rating",y="Borrower Credit Score",  
+       title = "AA rated loans see more investors per loan")
+
+```
+
+
+The investment patterns seem spread out. The density of green dots in the 
+AA rating indicates that there are more investors per AA rated loan. Investors 
+want to spread their funds across loans. AA loans are safer but the returns are 
+very low. My original thought process was that investors will prefer to invest 
+smaller amounts in loans rated D,E and HR. But it seems like a lot of investors 
+want to spread their investments across different ratings.
+
+The mean percentage funding for Prosper loans is approximately 99% which means 
+that most of the loans get close to 100% funding. So investment patterns suggest 
+that more investors are willing to put in more funds in the B,C and D category 
+of loans.
+
+
+** Borrower rate, prosper rating and credit score**
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=7, plot34}
+
+ggplot(aes(x=ProsperRatingAlpha,y=BorrowerRate),
+       data=subset(prosper.loan, !is.na(CreditLowerBucket) & !is.na(ProsperRatingAlpha))) +
+  geom_boxplot(aes(fill = CreditLowerBucket)) +
+    # Add axis labels, title  
+  labs(x="Prosper Rating",y="Borrower Rate",  
+       title = "Borrower rate increases with a lower Prosper Rating and lower credit score") +
+  theme(legend.position = "right") +
+  labs(fill = "Credit Score Bucket")
+```
+
+The borrower rate is highly dependent on the Credit score and the Prosper Rating
+of the borrower. There are no borrowers with a credit score less than 600 in AA
+and A rated loans. Borrowers with credit scores greater than 720 are spread from
+prosper rating AA to E, indicating that credit score is just one of the factors
+that affects prosper rating.
+
+The borrower rate steadily grows from AA to HR.
+
+The variation in borrwer's rate within a prosper rating is very minimal.
+
+
+
+##Multivariate Analysis##
+
+###Talk about some of the relationships you observed in this part of the investigation. Were there features that strengthened each other in terms of looking at your feature(s) of interest?###
+
+This part of the investigation strengthened the impact of Prosper Rating on the 
+borrower rate. Proper Rating seems to be the factor that influences the borrower 
+rate the most.
+
+The other interesting observation is the almost non-existent borrowers in credit 
+score lower than 600 since 2009. Most borrowers seem to be in the credit score
+range 600 to 720.
+
+
+###Were there any interesting or surprising interactions between features?###
+
+Across credit score ranges, the borrower rate for a Prosper Rating seems to be 
+constant. I expected the Prosper Ratings to move in the same direction as the 
+credit scores. But that does not seem to be the case and Prosper seems to use a 
+combination of other factors to arrive at the rating.
+
+##Final Plots And Summary##
+
+###Plot One###
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, finalplot1}
+# A boxplot showing the loan amount per investor in loans of different Prosper Ratings
+
+# Boxplot
+ggplot(aes(x=ProsperRatingAlpha, y = LoanOriginalAmount/Investors), 
+       data = subset(prosper.loan, !is.na(ProsperRatingAlpha))) +
+  geom_boxplot() +
+  # Plot the mean per investor investment per prosper rating
+  stat_summary(fun.y = mean, geom = "errorbar", aes(ymax = ..y.., ymin = ..y..),
+                 width = .75, linetype = "dashed", color = "blue") +
+  # Limit Y axis to 15000
+  coord_cartesian(ylim = c(0,15000)) +
+  labs(x="Prosper Rating \n (High to Low --->)",
+       y="Contribution per investor (USD)",  
+       title = "Contribution per investor for each Prosper Rating", 
+       caption = "Blue dotted line represents the Mean") 
+```
+
+###Description One###
+
+Loans with a Prosper Rating A,B and C are the most popular among investors. 
+AA rated loans, do not see as much investments inspite of being the best rated. 
+This may be due to the low lender yield on AA loans. This gives us insight into 
+the lending patterns on Prosper. Most lenders want to maximise their returns and 
+are willing to take moderate risks.
+
+###Plot Two###
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=8, finalplot2}
+# Plot mean borrower CreditScoreRangeLower per year 
+quartiles <- function(z){
+  quant <- quantile(z,probs = c(0.25,0.75))
+  return(quant)
+}
+
+# Add the mean, first and third quartiles
+ggplot(aes(x=LoanOriginationQuarter, y=CreditScoreRangeLower), 
+       data = subset(prosper.loan, !is.na(LoanOriginationQuarter))) +
+  geom_line(aes(group=1),stat='summary', fun.y = mean) +
+  geom_line(aes(group=1),stat = 'summary', fun.y = "quantile", 
+            fun.args = list(probs=0.25),linetype = 2, color = "blue") +
+  geom_line(aes(group=1),stat = 'summary', fun.y = "quantile", 
+            fun.args = list(probs=0.75),linetype = 2, color = "blue") +
+  
+# Add a vertical inercept for the quarters when Prosper closed business and 
+  # reopened business
+ geom_vline(aes(xintercept = which(levels(LoanOriginationQuarter) == 'Q3 2008')),
+            linetype = 3,color = "#F00A0A") + 
+  geom_vline(aes(xintercept = which(levels(LoanOriginationQuarter) == 'Q2 2009')-1),
+             linetype = 3,color = "#737374") +
+  
+# Set theme size, adjust x axis labels to avoid overlap
+  theme(text = element_text(size=10))+
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 4)) +
+  
+# Limit y axis to 580-720 as valid credit scores fall in this range
+  coord_cartesian(ylim = c(580,800)) +
+  
+# Annotate the vertical lines
+  annotate("text", x='Q1 2008', y=750, label = "Prosper closed business", 
+           color="#F00A0A") +
+  annotate("text", x='Q4 2009', y=770, label = "Prosper reopened its business", 
+           color = "#737374" ) +
+  annotate("text", x='Q4 2006', y=580, label = "First quartile", 
+           color = "blue" ) +
+  annotate("text", x='Q1 2007', y=630, label = "Mean", 
+           color = "black" ) +
+  annotate("text", x='Q4 2006', y=700, label = "Third quartile", 
+           color = "blue" ) +
+
+# Add axis labels, title  
+  labs(x="Loan Origination Quarter",y="Borrower Credit Score",  
+       title = "Mean borrower credit score from 2006-2014 on Prosper", 
+       subtitle = "Credit scores on Prosper have stayed above 690 since its reopening in 2009 showing stricter filtering of borrowers", 
+       caption = "There is a break in Q1 2008 when Prosper was not in business")
+  
+```
+
+
+###Description Two###
+
+This graph shows what changed in Prosper when it reopened business in 2009. 
+Along with the change in business model a key improvement seems to be a better 
+borrower profile. The mean credit score for borrowers slowly increased since 
+2008. As of Q1 2014, Prosper has an average borrower credit score of 690 
+compared to 590 in Q4 2006.
+
+###Plot Three###
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=10, fig.height=7, finalplot3}
+
+ggplot(aes(x=ProsperRatingAlpha,y=BorrowerRate),
+       data=subset(prosper.loan, !is.na(CreditLowerBucket) & !is.na(ProsperRatingAlpha))) +
+  geom_boxplot(aes(fill = CreditLowerBucket)) +
+    # Add axis labels, title  
+  labs(x="Prosper Rating",y="Borrower Rate [%]",  
+       title = "Borrower rate increases with a lower Prosper Rating and lower credit score") +
+  theme(legend.position = "right") +
+  labs(fill = "Credit Score Bucket")
+```
+
+###Description Three###
+
+This one sums up the findings well. Prosper Rating matters the most when 
+determining borrower rate. Credit scores are one of the main parameters used to 
+determine the prosper rating. Prosper Ratings A, B, C and D provide good returns
+to investors with varying credit profiles and are hence the most popular
+options amoung investors.
+
+##Reflection##
+
+I picked up the Prosper dataset as Peer-to-Peer lending concept is a new 
+domain to me. The dataset with its 81 variables was daunting at first. 
+I started with too many variables and quickly found myself overwhelmed and 
+my analysis directionless. But after visualizing a few patterns and 
+limiting the list of variables, the data started to make sense.
+
+Prosper Rating seems to be one of the most important factors for borrower 
+rate and lender yield. With Prosper's change in business model the loans seem 
+to have become unattractive for borrowers with a credot score less than 600. 
+Since its reopening in 2009, the loan amount has been on the rise every quarter. 
+The number of delinquent loans seems to have dropped but the data stops at 2014 
+and the trend may not be meaningful for the availale period. Investors seem to 
+prefer the medium risk loans in the prosper rating A to C category as they offer 
+better returns with a medium risk of chargeoffs. 
+
+I would have liked to dig deeper on the charged off loans and understand how 
+many of these are recovered and how much money investors lost in delinquent 
+loans. I could not find variables in the dataset that will help me analyze the 
+recovery made on charged off loans. This will be an interesting analysis for 
+me if the data becomes available in the future.
+
+Borrowers data did not contain age and gender. Analyzing the loan performance 
+by these factors can also be an interesting project.
+
+The loan statuses show a real trend only after 2 to 3 years from origination. 
+The data from 2009 to 2013 is interesting and is showing some trends in 
+decreasing lender yields. To get more insight into loan performances and 
+delinquencies, more recent data would be required. This again would make a 
+nice investigation for future.
+
+
